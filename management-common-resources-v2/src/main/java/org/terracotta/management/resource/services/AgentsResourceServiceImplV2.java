@@ -4,6 +4,9 @@
 
 package org.terracotta.management.resource.services;
 
+import org.apache.shiro.SecurityUtils;
+import org.apache.shiro.session.Session;
+import org.apache.shiro.subject.Subject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.terracotta.management.ServiceExecutionException;
@@ -42,6 +45,8 @@ public final class AgentsResourceServiceImplV2 {
 
   private final RequestValidator validator;
 
+  private static final long SESSION_TIMEOUT_MS = 15_000;
+
   public AgentsResourceServiceImplV2() {
     this.agentService = ServiceLocator.locate(AgentServiceV2.class);
     this.validator = ServiceLocator.locate(RequestValidator.class);
@@ -67,6 +72,23 @@ public final class AgentsResourceServiceImplV2 {
       return agentService.getAgents(idSet);
     } catch (ServiceExecutionException see) {
       throw new ResourceRuntimeException("Failed to get agents", see, Response.Status.BAD_REQUEST.getStatusCode());
+    } finally {
+      touchAuthenticatedSession();
+    }
+  }
+
+  private static void touchAuthenticatedSession() {
+    Subject subject = SecurityUtils.getSubject();
+    Session session;
+
+    if (subject.isAuthenticated() && (session = subject.getSession(false)) != null) {
+      if (session.getTimeout() != SESSION_TIMEOUT_MS) {
+        LOG.info("Setting session timeout for user {} to {} ms.", subject.getPrincipal(), SESSION_TIMEOUT_MS);
+        session.setTimeout(SESSION_TIMEOUT_MS);
+      }
+
+      LOG.info("Touching session for user {}", subject.getPrincipal());
+      session.touch();
     }
   }
 
